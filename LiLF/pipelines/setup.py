@@ -61,6 +61,8 @@ def run(step):
     
         return f'{output_dir}/{code}_SB{lib_util.lofar_nu2num(freq / 1e6):03d}.MS'
 
+    os.makedirs(output_dir, exist_ok=True)
+
     MSs = lib_ms.AllMSs(glob.glob(os.path.join(input_dir, '*MS')), s, check_flags=False, check_consistency=validate)
     if len(MSs.getListStr()) == 0:
         raise RuntimeError(f"No MSs found in input_dir '{input_dir}'.")
