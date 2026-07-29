@@ -5,7 +5,10 @@ import datetime
 import glob
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
+import dask
+from dask.distributed import Client, as_completed
+
 from LiLF import lib_cfg, lib_scheduler, lib_log, lib_walker
 logger_obj = lib_log.Logger('PiLL')
 logger = lib_log.logger
@@ -64,6 +67,14 @@ def run_step(step: lib_cfg.Step):
         raise ValueError(f"No handler registered for kind '{step.kind}'")
     handler(step)
 
+@dask.delayed
+def execute(step, *parent_steps):
+    timeinit = datetime.datetime.now()
+    run_step(step)
+    check_done(step)
+    w.mark_done(step.name, timeinit=timeinit)
+    logger.info(f'  done: {step.name}')
+    return step.name
 
 def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers: int = 1):
     """
@@ -78,6 +89,13 @@ def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers:
         dry_run:     if True, print what would run without executing
         max_workers: max parallel workers for parallel stages
     """
+    client = Client(
+        n_workers=max_workers,
+        threads_per_worker=1,
+    )
+
+    print("dashboard_link", client.dashboard_link)
+
     plan = pipeline.execution_plan()
 
     # Validate before running anything
@@ -88,6 +106,7 @@ def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers:
             logger.error(f'  [{e.step_name}] ({e.kind}) missing: {e.missing}')
         sys.exit(1)
 
+    dask_tasks = []
     for i, stage in enumerate(plan, 1):
 
         # --- parallel stage ---
@@ -100,41 +119,18 @@ def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers:
                     logger.info(f'  would run: {s.name} ({s.kind})')
                 continue
 
-            futures = {}
-            t_submit = {}
-            with ProcessPoolExecutor(max_workers=min(max_workers, len(stage))) as pool:
-                for step in stage:
-                    # We use is_done() directly rather than the if_todo() context manager
-                    # because submission and completion happen at different points in time —
-                    # the context manager would mark the step done as soon as the 'with'
-                    # block exits (i.e. right after submit()), before we know the outcome.
-                    if w.is_done(step.name):
-                        logger.warning(f'>> skip << {step.name}')
-                        continue
-                    logger.info(f'  submitting: {step.name} ({step.kind})')
-                    futures[pool.submit(run_step, step)] = step
-                    t_submit[step.name] = datetime.datetime.now()
-
-                failed = None
-                for future in as_completed(futures):
-                    step = futures[future]
-                    try:
-                        future.result()
-                        # Confirm the step wrote 'Done' to its log before recording
-                        # it as complete; raises RuntimeError if the check fails.
-                        check_done(step)
-                        # Write the step to the walker file only after the future returns
-                        # successfully.  If future.result() raises, mark_done is never
-                        # called, so the step remains un-done and will be retried on the
-                        # next run.
-                        w.mark_done(step.name, timeinit=t_submit[step.name])
-                        logger.info(f'  done: {step.name}')
-                    except Exception as e:
-                        logger.error(f'  FAILED: {step.name} — {e}')
-                        failed = e  # record but keep draining
-                
-                if failed:
-                    raise failed   # abort the whole pipeline on failure
+            parent_step = None
+            for step in stage:
+                # We use is_done() directly rather than the if_todo() context manager
+                # because submission and completion happen at different points in time —
+                # the context manager would mark the step done as soon as the 'with'
+                # block exits (i.e. right after submit()), before we know the outcome.
+                if w.is_done(step.name):
+                    logger.warning(f'>> skip << {step.name}')
+                    continue
+                logger.info(f'  submitting: {step.name} ({step.kind})')
+                parent_step = execute(step, parent_step)
+            dask_tasks.append(parent_step)
 
         # --- serial stage ---
         else:
@@ -145,56 +141,44 @@ def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers:
             with w.if_todo(stage.name):
                 logger.info(f'[{i:02d}] SERIAL:   {stage.name} ({stage.kind})')
                 pill_handlers = logger.handlers[:]   # save PiLL's handlers before the step
-                try:
-                    run_step(stage)
-                except Exception as e:
-                    logger.error(f'  FAILED: {stage.name} — {e}')
-                    raise
-                finally:
-                    # The step's Logger() replaced the handlers on the shared "LiLF"
-                    # logger.  Close the step's handlers and restore PiLL's so that
-                    # subsequent log lines (and the next step) go to PiLL's log file.
-                    for h in logger.handlers[:]:
-                        h.close()
-                    logger.handlers = pill_handlers
-                # Handlers are now PiLL's again.  Confirm the step wrote 'Done'
-                # to its log; raises RuntimeError (propagates out of the 'with'
-                # block) so the walker does not mark this step as complete.
-                check_done(stage)
-                logger.info(f'  done: {stage.name}')
 
+                parent_step = execute(stage, *dask_tasks)
+                dask_tasks = [parent_step]
 
-# Accept an explicit config file path as the sole optional positional argument;
-# fall back to auto-discovery in the current directory when none is given.
-parser = argparse.ArgumentParser(
-    description='PiLL: Pipeline for LOFAR LBA - runner',
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-)
+    dask.compute(dask_tasks)
 
-parser.add_argument(
-    'config',
-    nargs='?',
-    default=None,
-    metavar='CONFIG_FILE',
-    help='Path to the LiLF config/parset file (optional). '
-         'When omitted, the pipeline searches the current directory for '
-         'a file matching LiLF.conf, LiLF.config, LiLF.cfg, or LiLF.parset.',
-)
-args = parser.parse_args()
+if __name__ == "__main__":
+    # Accept an explicit config file path as the sole optional positional argument;
+    # fall back to auto-discovery in the current directory when none is given.
+    parser = argparse.ArgumentParser(
+        description='PiLL: Pipeline for LOFAR LBA - runner',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
-parsetFile = args.config
+    parser.add_argument(
+        'config',
+        nargs='?',
+        default=None,
+        metavar='CONFIG_FILE',
+        help='Path to the LiLF config/parset file (optional). '
+            'When omitted, the pipeline searches the current directory for '
+            'a file matching LiLF.conf, LiLF.config, LiLF.cfg, or LiLF.parset.',
+    )
+    args = parser.parse_args()
 
-pipeline = lib_cfg.read_parset(args.config)
-logger.info(pipeline.describe(verbose=True))
+    parsetFile = args.config
 
-# Set up the working directory and run the pipeline.
-max_workers = pipeline.get('max_workers')
-dry_run = pipeline.get('dry_run')
-working_dir = os.path.abspath(pipeline.get('working_dir'))
-if not os.path.exists(working_dir):
-    os.makedirs(working_dir)
-os.chdir(working_dir)
+    pipeline = lib_cfg.read_parset(args.config)
+    logger.info(pipeline.describe(verbose=True))
 
-run_pipeline(pipeline, dry_run=dry_run, max_workers=max_workers)
+    # Set up the working directory and run the pipeline.
+    max_workers = pipeline.get('max_workers')
+    dry_run = pipeline.get('dry_run')
+    working_dir = os.path.abspath(pipeline.get('working_dir'))
+    if not os.path.exists(working_dir):
+        os.makedirs(working_dir)
+    os.chdir(working_dir)
 
-logger.info('### %s: Done. #####################################')
+    run_pipeline(pipeline, dry_run=dry_run, max_workers=max_workers)
+
+    logger.info('### %s: Done. #####################################')
