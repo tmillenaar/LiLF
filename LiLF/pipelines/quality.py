@@ -4,7 +4,27 @@
 import os, glob, pickle
 import numpy as np
 from casacore.tables import table
-import bdsf
+
+import multiprocessing
+from contextlib import contextmanager
+
+
+@contextmanager
+def ignore_set_start_method():
+    original = multiprocessing.set_start_method
+
+    def noop(*args, **kwargs):
+        pass
+
+    multiprocessing.set_start_method = noop
+    try:
+        yield
+    finally:
+        multiprocessing.set_start_method = original
+
+
+with ignore_set_start_method():
+    import bdsf
 
 from LiLF import lib_ms, lib_util, lib_log, lib_cat, lib_img, lib_scheduler, lib_walker
 
