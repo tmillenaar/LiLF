@@ -99,15 +99,6 @@ def run_pipeline(pipeline: lib_cfg.Pipeline, dry_run: bool = False, max_workers:
         walltime="08:00:00",
         python=(
             "apptainer exec "
-            "--bind /etc/slurm "
-            "--bind /etc/passwd "
-            "--bind /etc/group "
-            "--bind /usr/bin/sbatch "
-            "--bind /usr/bin/squeue "
-            "--bind /usr/bin/scancel "
-            "--bind /usr/lib64/slurm "
-            "--bind /usr/lib64/libmunge.so.2 "
-            "--bind /var/run/munge "
             "/home/ldv-tmillenaar/LiLF/pill.simg "
             "python"
         ),
