@@ -69,7 +69,7 @@ DEFAULTS = {
         'min_facets':             '',
         'max_facets':             '',
         'develop':                False,
-        'data_dir':               '',
+        'input_list':             None,
         'use_shm':                False,
     },
     'ddserial': {
@@ -110,7 +110,7 @@ MANDATORY = {
     'calibrator':   ['input', 'output'],
     'timesplit':    ['input_h5', 'input_mss', 'output'],
     'combine':      ['input', 'output'],
-    'ddparallel':   ['input', 'output'],
+    'ddparallel':   ['input_list', 'output'],
     'ddserial':     ['input', 'output'],
     'quality':      ['input'],
     'extract':      ['input', 'output', 'extractRegion'],
@@ -241,7 +241,7 @@ class Step:
         missing = []
         for key in self._mandatory:
             val = self[key]
-            if val is None or val == '':
+            if val is None or val == '' or (isinstance(val, (list, tuple)) and len(val) == 0):
                 missing.append(key)
         if missing:
             return ValidationError(self.name, self.kind, missing)
@@ -467,3 +467,4 @@ def read_parset(path: str) -> Pipeline:
         )
 
     return Pipeline(global_params, steps_order, step_objects)
+
