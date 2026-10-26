@@ -72,9 +72,6 @@ DEFAULTS = {
         'develop':                False,
         'input_list':             None,
         'use_shm':                False,
-        # Use the single-projection-centre path inside lsmtool.setPatchPositions.
-        # True (default) keeps upstream behaviour.
-        'per_patch_projection':   True,
     },
     'ddserial': {
         'maxIter':                1,

@@ -21,6 +21,7 @@
 
 import os, glob, random
 import numpy as np
+import json
 from regions import Regions
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -54,7 +55,6 @@ def run(step):
     start_sourcedb = step['start_sourcedb']
     userReg = step['userReg']
     sf_phaseSolMode = 'phase'
-    per_patch_projection = step['per_patch_projection']
 
     # input_list: one or more directories (typically the output of a timesplit
     # run) that each contain an mss/ dir with the TC*.MS of that dataset.
@@ -204,7 +204,7 @@ def run(step):
             if flux_3c > threshold:
                 logger.info(f'3C source {source} (seperation: {sep:.2f} deg) app. flux {flux_3c:.2f} Jy is above threshold {threshold:.2f} Jy: keep.')
                 sm.concatenate(sm_3c)
-                sm.setPatchPositions(method='wmean', applyBeam=True, perPatchProjection=per_patch_projection)
+                sm.setPatchPositions(method='wmean', applyBeam=True)
             else:
                 logger.debug(f'3C source {source} (seperation: {sep:.2f} deg) app. flux {flux_3c:.2f} Jy is below threshold {threshold:.2f} Jy: ignore.')
         
@@ -414,7 +414,7 @@ def run(step):
         if not os.path.exists(sourcedb):
             logger.info(f'Creating skymodel {sourcedb}...')
             if c == 0 or (bright_source and c == 1):
-                if start_sourcedb == '' or start_sourcedb is None:  # if not provided, use LOTSS-DR3 as default, if the field is not fully covered, resort to GSM
+                if not start_sourcedb:  # if not provided, use LOTSS-DR3 as default, if the field is not fully covered, resort to GSM
                     if lib_dd_parallel.check_lotss_coverage(phasecentre, null_mid_freq/2):
                         logger.info('Target fully in LoTSS-DR3 - start from LoTSS + use more initial facets.')
                         start_sourcedb = 'LOTSS-DR3'
@@ -447,22 +447,12 @@ def run(step):
             # if using e.g. LoTSS, adjust for the frequency
             logger.debug(f'Extrapolating input skymodel fluxes from {np.mean(sm.getColValues("ReferenceFrequency"))/1e6:.0f}MHz to {np.mean(MSs.getFreqs())/1e6:.0f}MHz assuming si=-0.7')
             si_factor = (np.mean(MSs.getFreqs())/np.mean(sm.getColValues('ReferenceFrequency')))**0.7 # S60 = si_factor * S54
-            logger.info('ddparallel debug: before beam-mask selection')
             sm.select(f'{beamMask}==True')  # remove outside of FoV (should be subtracted (c>0) or not present (c==0)!)
-            logger.info('ddparallel debug: after beam-mask selection')
-            logger.info('ddparallel debug: before threshold grouping')
             sm.group('threshold', FWHM=2/60, root='Src') # group nearby components to single source patch
-            logger.info('ddparallel debug: after threshold grouping')
-            logger.info('ddparallel debug: before weighted patch positions')
-            sm.setPatchPositions(method='wmean', applyBeam=True, perPatchProjection=per_patch_projection)
-            logger.info('ddparallel debug: after weighted patch positions')
-            logger.info('ddparallel debug: before nearby bright-facet merging')
+            sm.setPatchPositions(method='wmean', applyBeam=True)
             sm = lib_dd_parallel.merge_nearby_bright_facets(sm, 1/60, 0.5, applyBeam=True)
-            logger.info('ddparallel debug: after nearby bright-facet merging')
             # TODO we need some logic here to avoid picking up very extended sources.
-            logger.info('ddparallel debug: before patch flux extraction')
             patch_fluxes = sm.getColValues('I', aggregate='sum', applyBeam=True)
-            logger.info('ddparallel debug: after patch flux extraction')
             # disbale 3cremoval if bright source in the field and set max_facets to 1
             if c==0 and (patch_fluxes/si_factor > 50).any():
                 logger.warning(f'Found patch with flux > 50 Jy: {patch_fluxes[patch_fluxes > 50]}, turning off 3c removal and forcing max_facets=1.')
@@ -480,46 +470,27 @@ def run(step):
                 logger.warning(f'More than {max_facets[c]} bright sources above minimum flux {facet_fluxes[c]:.2f} Jy! Using sources above {bright_sources_flux:.2f} Jy')
             else:
                 bright_sources_flux = facet_fluxes[c]
-            logger.info('ddparallel debug: before bright-patch name/position extraction')
             bright_names = sm.getPatchNames()[patch_fluxes >= bright_sources_flux*si_factor]
             bright_pos = sm.getPatchPositions(bright_names)
-            logger.info('ddparallel debug: after bright-patch name/position extraction')
-            logger.info('ddparallel debug: before voronoi grouping')
             sm.group('voronoi', targetFlux=bright_sources_flux*si_factor, applyBeam=True, root='', byPatch=True)
-            logger.info('ddparallel debug: after voronoi grouping')
-            logger.info('ddparallel debug: before final patch positions')
             sm.setPatchPositions(bright_pos)
-            logger.info('ddparallel debug: after final patch positions')
-            logger.info('ddparallel debug: before patch renaming')
             lib_dd_parallel.rename_skymodel_patches(sm, applyBeam=True)
-            logger.info('ddparallel debug: after patch renaming')
 
             if c == 0 and remove3c:
                 # Add models of bright 3c sources to the sky model. Model will be subtracted from data before imaging.
-                logger.info('ddparallel debug: before 3C model addition')
                 sm = add_3c_models(sm, phasecentre=phasecentre, beamMask=beamMask, null_mid_freq=null_mid_freq)
-                logger.info('ddparallel debug: after 3C model addition')
                 for stokes in ['Q','U','V']:
                     sm.setColValues(stokes, np.zeros(len(sm.getColValues("I")))) # force non I Stokes to zero
                     sm.table[stokes].unit = u.Jy
-                logger.info('ddparallel debug: after Stokes reset')
 
-            logger.info('ddparallel debug: before source-region generation')
             make_source_regions(sm, c)
-            logger.info('ddparallel debug: after source-region generation')
-            logger.info('ddparallel debug: before sky-model write')
             sm.write(sourcedb, clobber=True)
-            logger.info('ddparallel debug: after sky-model write')
-            logger.info('ddparallel debug: before patch-count logging')
             logger.info(f'Using {len(sm.getPatchNames())} patches.')
-            logger.info('ddparallel debug: after patch-count logging')
         else:
             logger.info(f'Load existing skymodel {sourcedb}')
             sm = lsmtool.load(sourcedb, beamMS=beamMS)
     
-        logger.info('ddparallel debug: before sky-model plot')
         sm.plot(f'{ddp_dir}/skymodel/patches-c{c}.png', 'patch')
-        logger.info('ddparallel debug: after sky-model plot')
 
         # copy sourcedb into each MS to prevent concurrent access from multiprocessing to the sourcedb
         sourcedb_basename = sourcedb.split('/')[-1]
@@ -661,7 +632,6 @@ def run(step):
                     if debug_3c_sub:
                         MSs.addcol('DATA_SUB', 'PREPARED_DATA')
                         with open(parset_dir+"/3C_coordinates.json", "r") as file:
-                            import json
                             all_3c = json.load(file)
                         
                     for patch in _3c_patches:
