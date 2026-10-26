@@ -52,6 +52,7 @@ def run(step):
     max_facets = step['max_facets']
     develop = step['develop']
     use_shm = step['use_shm']
+    temp_dir_wsclean = step['temp_dir_wsclean']
     start_sourcedb = step['start_sourcedb']
     userReg = step['userReg']
     sf_phaseSolMode = 'phase'
@@ -802,7 +803,9 @@ def run(step):
             widefield_kwargs = dict(data_column='CORRECTED_DATA', use_shm=use_shm, size=imgsizepix_wide, scale=f'{pixscale}arcsec', weight='briggs -0.5', niter=1000000,
                                     gridder='wgridder',  parallel_gridding=len(sm.getPatchNames())*channels_out, minuv_l=30, mgain=0.85, parallel_deconvolution=1024,
                                     join_channels='', fit_spectral_pol=3, channels_out=channels_out, deconvolution_channels=3, multiscale='',
-                                    multiscale_scale_bias=0.65, pol='i', facet_regions=facetregname, apply_facet_solutions=f'{wide_h5} phase000', concat_mss=True, temp_dir='/tmp') # nocheckin, don't hardcode, might not work on every system
+                                    multiscale_scale_bias=0.65, pol='i', facet_regions=facetregname, apply_facet_solutions=f'{wide_h5} phase000', concat_mss=True)
+            if temp_dir_wsclean:
+                widefield_kwargs['temp_dir'] = temp_dir_wsclean
 
             # for low-freq or low-dec data, allow the beam to be fitted, otherwise (survey) force 15"
             if not(np.mean(MSs.getFreqs()) < 50e6) and not (phasecentre[1] < 23):
@@ -1019,6 +1022,8 @@ def run(step):
                                             gridder='wgridder',  parallel_gridding=4, minuv_l=30, mgain=0.65, parallel_deconvolution=32, no_update_model_required='',
                                             join_channels='', fit_spectral_pol=3, channels_out=4, deconvolution_channels=3, multiscale='',
                                             multiscale_scale_bias=0.65, pol='i', shift=f'{subfield_center[0].to(u.hourangle).to_string()} {subfield_center[1].to_string()}', concat_mss=True)
+                    if temp_dir_wsclean:
+                        widefield_kwargs['temp_dir'] = temp_dir_wsclean
 
                     # c0: make quick initial image to get a mask
                     logger.info('Making wide-field image for clean mask...')

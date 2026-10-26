@@ -72,6 +72,7 @@ DEFAULTS = {
         'develop':                False,
         'input_list':             None,
         'use_shm':                False,
+        'temp_dir_wsclean':       None,
     },
     'ddserial': {
         'maxIter':                1,
