@@ -1,4 +1,5 @@
-Bootstrap: docker
+
+otstrap: docker
 From: fedora:38
 
 %files
@@ -29,32 +30,31 @@ From: fedora:38
 	export PYTHON_CASACORE_PATCH=$INSTALLDIR/python-casacore/python_casacore_setup_patch.patch
 	
 	# Settings relevant to the installed software.
-	export AOFLAGGER_VERSION=v3.4.0
+	export AOFLAGGER_VERSION=master
 	export ARMADILLO_VERSION=9.900.3
 	export BLAS_VERSION=3.8.0
     export BOOST_DOT_VERSION=1.69.0
-	export BOOST_VERSION=1.78.0
-	export CASACORE_VERSION=v3.7.1
+	export BOOST_VERSION=1.69.0
+	export CASACORE_VERSION=v3.5.0
 	# Leave at latest, release versions crash for some reason.
 	export CASAREST_VERSION=latest
 	export CFITSIO_VERSION=7.3.47
     export DDFPIPELINE_VERSION=72e5285
-    export DPPP_VERSION=v6.6
-	export DYSCO_VERSION=master
-    export EVERYBEAM_VERSION=v0.8.5
+    export DPPP_VERSION=74bbd08df5e79072d1c5aacd62e2809766e4eeef
+	export DYSCO_VERSION=2e7f331
+    export EVERYBEAM_VERSION=df937562
     export FFTW_VERSION=3.5.8
 	export HDF5_VERSION=1.14.3
     export IDG_VERSION=011687ed
-    export LAPACK_VERSION=3.8.0
-    export LOFARSTMAN_VERSION=v1.0.1
-    export LOSOTO3_VERSION=latest
+	export LAPACK_VERSION=3.8.0
+	export LOSOTO3_VERSION=latest
     export LSMTOOL_VERSION=master
 	export OPENBLAS_VERSION=v0.3.22
 	export PYBDSF_VERSION=720f5c3
-	export PYTHON_CASACORE_VERSION=v3.7.1
+	export PYTHON_CASACORE_VERSION=v3.5.0
     export RMEXTRACT_VERSION=f161b0a
 	export SUPERLU_VERSION=5.2.1
-	export WSCLEAN_VERSION=v3.7
+	export WSCLEAN_VERSION=de09edb47149315283a0eb03098d7735bdf75a7a
 	export WCSLIB_VERSION=6.4
 	export HDF5_USE_FILE_LOCKING=FALSE
     export OMPI_ALLOW_RUN_AS_ROOT=1
@@ -109,11 +109,10 @@ From: fedora:38
 	dnf -y install cmake3 nodejs
     dnf -y install swarp rclone bc
     # Necessary for nomacs
-    strip --remove-section=.note.ABI-tag /usr/lib64/libQt5Core.so.5
+    sudo strip --remove-section=.note.ABI-tag /usr/lib64/libQt5Core.so.5
 
     mkdir -p $INSTALLDIR/patches
     cd $INSTALLDIR && git clone --single-branch -b fedora-py3 https://github.com/tikk3r/flocs.git
-    git -C $INSTALLDIR/flocs submodule update --init flocs-runners
     mv $INSTALLDIR/flocs/patches/* $INSTALLDIR/patches/
     
 	# Install OpenBLAS
@@ -275,13 +274,7 @@ From: fedora:38
     #
     # Setup the Python environment.
     #
-    wget https://raw.githubusercontent.com/tikk3r/flocs/fedora-py3/requirements.txt -O $INSTALLDIR/requirements.txt
-    sed -i 's/^"\(.*\)"$/\1/' $INSTALLDIR/requirements.txt
-    # astLib 0.13.x requires NumPy >=2, unlike this image's NumPy 1.x stack.
-    # Install a compatible release without build isolation: astLib's setup.py
-    # imports pkg_resources, removed from setuptools >=82. Omit the entry from
-    # requirements to prevent pip rebuilding/upgrading it in isolation.
-    sed -i '/^astLib$/d' $INSTALLDIR/requirements.txt
+    wget https://raw.githubusercontent.com/tikk3r/flocs/fedora-py3/requirements3.txt -O $INSTALLDIR/requirements3.txt
     pip --version
     #pip install --upgrade setuptools
     pip --no-cache-dir install virtualenv
@@ -289,20 +282,13 @@ From: fedora:38
     /usr/bin/python -m pip uninstall -y numpy
     virtualenv $INSTALLDIR/pyenv-py3 --python=python3
     # Without this strange bash errors appear with singularity shell from apptainer with 1.1.6-1.el8.
-    activate="$INSTALLDIR/pyenv-py3/bin/activate"
-    {
-        printf '%s\n' 'unset $PROMPT_COMMAND'
-        cat "$activate"
-    } > "${activate}.tmp"
-    mv "${activate}.tmp" "$activate"
+    printf "unset \$PROMPT_COMMAND\n$(cat $INSTALLDIR/pyenv-py3/bin/activate)" > $INSTALLDIR/pyenv-py3/bin/activate
     source $INSTALLDIR/pyenv-py3/bin/activate
     pip install --upgrade pip wheel "Cython==0.29.30"
     pip install "numpy==1.26.2"
-    pip install 'pandas==2.0.0'
+    pip install --no-binary pandas 'pandas==2.0.0'
     pip install --no-binary h5py h5py
-    pip install "setuptools==68.2.2"
-    pip install --no-build-isolation 'astLib==0.12.1'
-    pip install -r $INSTALLDIR/requirements.txt
+    pip install -r $INSTALLDIR/requirements3.txt
     pip install lofar-h5plot
     pip install legacystamps
     pip install Kittens
@@ -317,8 +303,7 @@ From: fedora:38
     wget https://lta.lofar.eu/software/lofar_lta-2.8.0.tar.gz
     tar xf lofar_lta-*
     cd lofar_lta-2.8.0
-    # Oracle Instant Client download from astro-wise.org is currently unavailable.
-    # python setup.py install_oracle
+    python setup.py install_oracle
     python setup.py install
     cd ..
     rm lofar_lta*.tar.gz
@@ -407,7 +392,7 @@ From: fedora:38
 	#
 	# In case anything was installed previously
 	pip uninstall -y python-casacore
-    pip install --no-deps --no-binary python-casacore "python-casacore==3.7.1"
+    pip install --no-deps --no-binary python-casacore "python-casacore==3.5.2"
     
 	#
 	# Install Dysco
@@ -438,7 +423,7 @@ From: fedora:38
 	#
 	mkdir -p ${INSTALLDIR}/aoflagger/build
 	cd ${INSTALLDIR}/aoflagger && git clone https://gitlab.com/aroffringa/aoflagger.git src && cd ${INSTALLDIR}/aoflagger/src && git checkout ${AOFLAGGER_VERSION} && echo export DYSCO_VERSION=$(git rev-parse --short HEAD) >> $INSTALLDIR/init.sh
-	cd ${INSTALLDIR}/aoflagger/build && cmake3 -DCMAKE_INSTALL_PREFIX=${INSTALLDIR}/aoflagger/ -DCASACORE_ROOT_DIR=${INSTALLDIR}/casacore -DBUILD_SHARED_LIBS=ON -DPORTABLE=True -DENABLE_GUI=OFF ../src
+	cd ${INSTALLDIR}/aoflagger/build && cmake3 -DCMAKE_INSTALL_PREFIX=${INSTALLDIR}/aoflagger/ -DCASACORE_ROOT_DIR=${INSTALLDIR}/casacore -DBUILD_SHARED_LIBS=ON -DPORTABLE=True ../src
 	cd ${INSTALLDIR}/aoflagger/build && make -s -j ${J}
 	cd ${INSTALLDIR}/aoflagger/build && make install
     cd $INSTALLDIR
@@ -453,7 +438,6 @@ From: fedora:38
     cd $INSTALLDIR/lofarstman
     git clone https://github.com/lofar-astron/LofarStMan.git
     cd LofarStMan
-    git checkout ${LOFARSTMAN_VERSION}
     mkdir build && cd build
     cmake3 -DCASACORE_ROOT_DIR=$INSTALLDIR/casacore -DCMAKE_INSTALL_PREFIX=$INSTALLDIR/lofarstman ..
     make -j$J
@@ -535,7 +519,7 @@ From: fedora:38
     rm -rf $INSTALLDIR/DPPP/build
     rm -rf $INSTALLDIR/DPPP/src
     mkdir $INSTALLDIR/DPPP/usermodules
-    wget https://raw.githubusercontent.com/jurjen93/lofar_helpers/b87a0a76a965021e46bd1c87aab212911ab19eb7/dp3_helpers/polconv.py -O $INSTALLDIR/DPPP/usermodules/polconv.py
+    wget https://raw.githubusercontent.com/jurjen93/lofar_helpers/master/dp3_helpers/polconv.py -O $INSTALLDIR/DPPP/usermodules/polconv.py
 
 	#
 	# Install RMextract
@@ -545,8 +529,6 @@ From: fedora:38
     git clone https://github.com/lofar-astron/RMextract.git src
     cd src
     if [ "$RMEXTRACT_VERSION" != "latest" ]; then git checkout $RMEXTRACT_VERSION; fi
-    # RMextract uses numpy.distutils, which is only supported with setuptools <60.
-    pip install 'setuptools<60'
     python setup.py build --add-lofar-utils
     python setup.py install --add-lofar-utils
     cd $INSTALLDIR
@@ -576,7 +558,7 @@ From: fedora:38
     git clone https://github.com/darafferty/LSMTool.git lsmtool 
 	cd $INSTALLDIR/lsmtool/lsmtool
     if [ "$LSMTOOL_VERSION" != "latest" ]; then git checkout $LSMTOOL_VERSION; fi
-	pip install --no-deps .
+	python setup.py install
     cd $INSTALLDIR
 	rm -rf $INSTALLDIR/lsmtool
 
@@ -620,7 +602,7 @@ From: fedora:38
     #
     mkdir -p $INSTALLDIR/ds9/bin
     cd $INSTALLDIR/ds9
-    wget https://ds9.si.edu/download/centos-stream-9_x86_64/ds9.centos-stream-9_x86_64.8.8.tar.gz
+    wget http://ds9.si.edu/download/fedora36x86/ds9.fedora36x86.8.5.tar.gz
     tar xf ds9*.tar.gz -C $INSTALLDIR/ds9/bin
     rm ds9*.tar.gz
 
@@ -642,27 +624,23 @@ From: fedora:38
 
     #
     # Install the standalone StationResponse libraries. DDFacet still uses these.
-    #   Disabled for LiLF: LOFARBeam cannot build against Casacore 3.7.x with
-    #   GCC 13.2 due to a strict-constexpr error in casacore/casa/Utilities/
-    #   DataType.h:265.  LiLF uses EveryBeam directly, so LOFARBeam is not
-    #   needed; the DDF pipeline is not used by LiLF either.
-    #
-    # echo Installing LOFARBeam...
-    # mkdir -p $INSTALLDIR/LOFARBeam/build
-    # cd $INSTALLDIR/LOFARBeam
-    # git clone https://github.com/lofar-astron/LOFARBeam.git src
-    # cd src
-    # echo export LOFARBEAM_VERSION=$(git rev-parse --short HEAD) >> $INSTALLDIR/init.sh
-    # cd ../build
-    # # Install in the existing lofar python folder
-    # mkdir -p /opt/lofar/lofar/lib64/python${PYTHON_VERSION}/site-packages/lofar/
-    # touch /opt/lofar/lofar/lib64/python${PYTHON_VERSION}/site-packages/lofar/__init__.py
-    # cmake -DCMAKE_INSTALL_PREFIX=$INSTALLDIR/lofar ../src
-    # make -j $J
-    # make install
-    # cd $INSTALLDIR
-    # rm -rf $INSTALLDIR/LOFARBeam/build
-    # rm -rf $INSTALLDIR/LOFARBeam/src
+    #   
+    echo Installing LOFARBeam...
+    mkdir -p $INSTALLDIR/LOFARBeam/build
+    cd $INSTALLDIR/LOFARBeam
+    git clone https://github.com/lofar-astron/LOFARBeam.git src
+    cd src
+    echo export LOFARBEAM_VERSION=$(git rev-parse --short HEAD) >> $INSTALLDIR/init.sh
+    cd ../build
+    # Install in the existing lofar python folder
+    mkdir -p /opt/lofar/lofar/lib64/python${PYTHON_VERSION}/site-packages/lofar/
+    touch /opt/lofar/lofar/lib64/python${PYTHON_VERSION}/site-packages/lofar/__init__.py
+    cmake -DCMAKE_INSTALL_PREFIX=$INSTALLDIR/lofar ../src
+    make -j $J
+    make install
+    cd $INSTALLDIR
+    rm -rf $INSTALLDIR/LOFARBeam/build
+    rm -rf $INSTALLDIR/LOFARBeam/src
 
     #
     # Install DDFacet
@@ -737,6 +715,7 @@ From: fedora:38
     #wget https://lambda.gsfc.nasa.gov/data/foregrounds/tgss_adr/TGSSADR1_7sigma_catalog.fits
     wget http://tgssadr.strw.leidenuniv.nl/catalogs/TGSSADR1_7sigma_catalog.fits
     cd $INSTALLDIR
+    wget https://raw.githubusercontent.com/rvweeren/lofar_facet_selfcal/main/sub-sources-outside-region.py -O /opt/lofar/ddf-pipeline/scripts/sub-sources-outside-region.py
     chmod 755 /opt/lofar/ddf-pipeline/scripts/sub-sources-outside-region.py
     sed -i "s/np\.float/np\.float_/" /opt/lofar/ddf-pipeline/scripts/sub-sources-outside-region.py
     sed -i "s/(np\.int)[^0-9]/np\.int_/g" /opt/lofar/ddf-pipeline/scripts/sub-sources-outside-region.py
@@ -771,7 +750,7 @@ git clone https://git.astron.nl/RD/VLBI-cwl.git
     #
     mkdir -p /opt/lofar/runners
     cd /opt/lofar/
-    cp flocs/flocs-runners/slurm_templates/run* ./runners/
+    cp flocs/runners/run* ./runners/
     cp -r flocs/utility /opt/lofar/
     rm -rf flocs
     chmod 755 /opt/lofar/runners/*.sh
@@ -844,11 +823,6 @@ git clone https://git.astron.nl/RD/VLBI-cwl.git
     echo export PATH=/usr/lib64/openmpi/bin:\$PATH >> $INSTALLDIR/init.sh
     echo export LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/hdf5/lib:\$LD_LIBRARY_PATH >> $INSTALLDIR/init.sh
 	echo export LD_LIBRARY_PATH=\$INSTALLDIR/aoflagger/lib:\$INSTALLDIR/casacore/lib:\$INSTALLDIR/DPPP/lib:\$INSTALLDIR/dysco/lib:\$INSTALLDIR/EveryBeam/lib:/opt/hdf5/lib:\$INSTALLDIR/idg/lib:\$INSTALLDIR/lofar/lib:\$INSTALLDIR/lofar/lib64:\$LD_LIBRARY_PATH  >> $INSTALLDIR/init.sh
-    # casacore looks for table storage manager libraries (dyscostman, lofarstman,
-    # mscorrelator, …) in CASACORE_LDPATH *before* falling back to LD_LIBRARY_PATH.
-    # Set it explicitly so a fresh shell that loses LD_LIBRARY_PATH (e.g. under
-    # some MPI launchers) still finds the dysco storage manager.
-    echo export CASACORE_LDPATH=\$INSTALLDIR/dysco/lib:\$INSTALLDIR/lofarstman/lib64:\$CASACORE_LDPATH >> $INSTALLDIR/init.sh
     echo export LD_LIBRARY_PATH=/opt/OpenBLAS/lib64:\$LD_LIBRARY_PATH >> $INSTALLDIR/init.sh
     echo export LD_LIBRARY_PATH=/usr/lib64/openmpi/lib/:\$LD_LIBRARY_PATH >> $INSTALLDIR/init.sh
     echo export LD_LIBRARY_PATH=\$INSTALLDIR/sagecal/lib:\$LD_LIBRARY_PATH >> $INSTALLDIR/init.sh
