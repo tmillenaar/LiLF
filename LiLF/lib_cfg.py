@@ -243,7 +243,7 @@ class Step:
         missing = []
         for key in self._mandatory:
             val = self[key]
-            if val is None or val == '' or (isinstance(val, (list, tuple)) and len(val) == 0):
+            if not val:
                 missing.append(key)
         if missing:
             return ValidationError(self.name, self.kind, missing)

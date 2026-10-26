@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 # Perform self-calibration on a group of SBs concatenated in TCs.
-
 # The algorithm works as follows:
 # 1. Solve & apply direction-independent FR correction from LL-RR
 # 2. Solve in a small number of directions (~5) against GSM or HBA input model. Solving happens in an iterative way,
@@ -151,7 +150,6 @@ def run(step):
     def add_3c_models(sm, phasecentre, null_mid_freq, beamMask, max_sep=50., threshold=0):
     
         with open(parset_dir+"/3C_coordinates.json", "r") as file:
-            import json
             all_3c = json.load(file)
     
         phasecentre = SkyCoord(phasecentre[0], phasecentre[1], unit=(u.deg, u.deg))
