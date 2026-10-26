@@ -268,7 +268,7 @@ ENV LD_LIBRARY_PATH=/usr/lib/instantclient_11_2:$LD_LIBRARY_PATH
 #####################################################################
 RUN pip install --root-user-action=ignore \
     git+https://github.com/lofar-astron/PyBDSF.git@8b33037 \
-    git+https://git.astron.nl/RD/LSMTool.git@367dfd3e \
+    git+https://git.astron.nl/RD/LSMTool.git@18496e6 \
     git+https://github.com/revoltek/losoto.git@86358eb \
     git+https://github.com/lofar-astron/RMextract@v0.5.1 \
     git+https://git.astron.nl/RD/spinifex@1616fe1e \

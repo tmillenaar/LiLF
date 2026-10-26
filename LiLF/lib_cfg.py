@@ -61,6 +61,7 @@ DEFAULTS = {
     'combine': {},
     'ddparallel': {
         'maxIter':                2,
+        'maxSubIter':             1,
         'subfield':               '',
         'subfield_min_flux':      20,
         'ph_sol_mode':            'phase',
@@ -71,6 +72,9 @@ DEFAULTS = {
         'develop':                False,
         'input_list':             None,
         'use_shm':                False,
+        # Use the single-projection-centre path inside lsmtool.setPatchPositions.
+        # True (default) keeps upstream behaviour.
+        'per_patch_projection':   True,
     },
     'ddserial': {
         'maxIter':                1,
@@ -467,4 +471,3 @@ def read_parset(path: str) -> Pipeline:
         )
 
     return Pipeline(global_params, steps_order, step_objects)
-
