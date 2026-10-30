@@ -181,8 +181,7 @@ From: fedora:38
 	dnf -y install python-pip python3-tkinter
     dnf -y install libsigc++20-devel gtkmm30-devel
     dnf -y install lua lua-devel
-    dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
-    dnf -y install pgplot
+    dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
     dnf -y install python3-numpy-f2py
     dnf -y install qt5-qtbase qt5-qtx11extras
     dnf -y install perf
@@ -296,6 +295,20 @@ From: fedora:38
     } > "${activate}.tmp"
     mv "${activate}.tmp" "$activate"
     source $INSTALLDIR/pyenv-py3/bin/activate
+    # DDFacet 0.7.2 is built against the NumPy 1.x C API.  requirements.txt
+    # now allows NumPy 2.x, and astropy>6 resolves to a release that requires
+    # numpy>=2, which would replace the 1.26.2 install below.  Constrain the
+    # whole environment (including later pip installs) to NumPy 1.x.  The
+    # extra caps select the last releases that still support NumPy 1.x.
+    printf '%s\n' \
+        'numpy==1.26.2' \
+        'astropy<8' \
+        'astropy-healpix<2' \
+        'scipy<1.17' \
+        'regions<0.12' \
+        'numdifftools<0.10' \
+        > $INSTALLDIR/pip-constraints.txt
+    export PIP_CONSTRAINT=$INSTALLDIR/pip-constraints.txt
     pip install --upgrade pip wheel "Cython==0.29.30"
     pip install "numpy==1.26.2"
     pip install 'pandas==2.0.0'
@@ -683,8 +696,21 @@ From: fedora:38
 
     sed -i "s/npzfile\.iteritems/npzfile\.items/" DDFacet/DDFacet/Imager/ClassFacetMachine.py
     sed -i "4d" DDFacet/pyproject.toml
-    sed -i '9s?$? -DPYTHON_NUMPY_INCLUDE_DIR=/opt/lofar/pyenv-py3/lib64/python3.11/site-packages/numpy/core/include?' DDFacet/setup.cfg
-    sed -i '13s?$? -DPYTHON_NUMPY_INCLUDE_DIR=/opt/lofar/pyenv-py3/lib64/python3.11/site-packages/numpy/core/include?' DDFacet/setup.cfg
+    NUMPY_VERSION=$(python -c 'import numpy; print(numpy.__version__)')
+    NUMPY_INCLUDE=$(python -c 'import numpy; print(numpy.get_include())')
+    case "$NUMPY_VERSION" in
+        1.*) ;;
+        *)
+            echo "ERROR: NumPy 1.x is required for DDFacet 0.7.2, found $NUMPY_VERSION" >&2
+            exit 1
+            ;;
+    esac
+    if [ ! -f "${NUMPY_INCLUDE}/numpy/arrayobject.h" ]; then
+        echo "ERROR: NumPy C headers not found in ${NUMPY_INCLUDE}" >&2
+        exit 1
+    fi
+    sed -i "9s?\$? -DPYTHON_NUMPY_INCLUDE_DIR=${NUMPY_INCLUDE}?" DDFacet/setup.cfg
+    sed -i "13s?\$? -DPYTHON_NUMPY_INCLUDE_DIR=${NUMPY_INCLUDE}?" DDFacet/setup.cfg
     pip install --no-deps DDFacet/
 
 
@@ -702,8 +728,8 @@ From: fedora:38
     #grep -rl "np.int(" killMS | xargs sed -i 's/np\.int(/np\.int_(/g'
     grep -rl "np.bool" killMS | xargs perl -pi -e 's/np\.bool(?![0-9a-zA-Z])/np\.bool_/'
     grep -rl "np.bool8" killMS | xargs perl -pi -e 's/np\.bool8/np\.bool_/'
-    sed -i '9s?$? -DPYTHON_NUMPY_INCLUDE_DIR=/opt/lofar/pyenv-py3/lib64/python3.11/site-packages/numpy/core/include?' killMS/setup.cfg
-    sed -i '13s?$? -DPYTHON_NUMPY_INCLUDE_DIR=/opt/lofar/pyenv-py3/lib64/python3.11/site-packages/numpy/core/include?' killMS/setup.cfg
+    sed -i "9s?\$? -DPYTHON_NUMPY_INCLUDE_DIR=${NUMPY_INCLUDE}?" killMS/setup.cfg
+    sed -i "13s?\$? -DPYTHON_NUMPY_INCLUDE_DIR=${NUMPY_INCLUDE}?" killMS/setup.cfg
     sed -i "147d" killMS/setup.py
     pip install --no-deps killMS/
 
